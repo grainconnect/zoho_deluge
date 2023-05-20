@@ -1,0 +1,12 @@
+//bill_run_id = "498346000015618175";
+//get the bill run
+billrun = zoho.crm.getRecordById("Billing_Runs",bill_run_id.toLong());
+//start the bill run and set the date and status
+automation.CreateBillLog(bill_run_id,"Billing run doing final checks...");
+if(billrun.get("Missing_Orders") == "Matching" && billrun.get("Invoice_Checks") == "Matching"){
+	Update = zoho.crm.updateRecord("Billing_Runs",bill_run_id.toLong(),{"Status":"Completed","Bill_Run_Complete_Date":today});
+	automation.CreateBillLog(bill_run_id,"Billing run has completed!");
+} else {
+	Update = zoho.crm.updateRecord("Billing_Runs",bill_run_id.toLong(),{"Status":"Error"});
+	automation.CreateBillLog(bill_run_id,"!!!Billing run has errored!!!");
+}

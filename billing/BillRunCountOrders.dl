@@ -1,0 +1,30 @@
+//bill_run_id = "498346000015570560";
+//get bill run
+billrun = zoho.crm.getRecordById("Billing_Runs",bill_run_id.toLong());
+dateString = billrun.get("Bill_Run_Invoice_Date").toString('yyyy-MM-dd');
+//info dateString;
+// Define the query string
+query = "SELECT COUNT(id) as order_count, SUM(Total) as order_value FROM Deals WHERE (((Next_Invoice_Date = '" + dateString + "')" + " AND Billing_Status = 'Active') AND Stage = 'Current Customer')";
+//info query;
+// Define the URL to invoke the COQL API
+url = "https://www.zohoapis.eu/crm/v4/coql?coqlQuery=" + query;
+// Define the parameter map to pass to the the COQL API
+param = Map();
+param.put("select_query",query);
+// Invoke the COQL API and get the response
+response = invokeurl
+[
+	url :url
+	type :POST
+	parameters:param.toString()
+	detailed:true
+	connection:"zohocoql"
+];
+//info response;
+order_count = ifnull(response.get("responseText").get("data").get(0).get("order_count"),0);
+mp = Map();
+mp.put("Valid_Orders",order_count.toString());
+updateResp = zoho.crm.updateRecord("Billing_Runs",bill_run_id.toLong(),mp);
+//info updateResp;
+automation.CreateBillLog(bill_run_id,"Counted orders...");
+return "SUCCESS";

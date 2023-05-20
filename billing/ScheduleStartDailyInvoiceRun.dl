@@ -1,0 +1,53 @@
+bill_run_id = "498346000015618175";
+//get the bill run
+billrun = zoho.crm.getRecordById("Billing_Runs",bill_run_id);
+//start the bill run and set the date and status
+startUpdate = zoho.crm.updateRecord("Billing_Runs",bill_run_id,{"Status":"Invoicing Started"});
+automation.CreateBillLog(bill_run_id,"Billing run started processing invoices...");
+//do some logic to set the search parameter for the order search, and get the next invoices to be processed.
+dateString = billrun.get("Bill_Run_Invoice_Date").toString('yyyy-MM-dd');
+//info dateString;
+orderListSize = 0;
+if(billrun.getJSON("Bill_Run_Size") == null)
+{
+	run = 0;
+}
+else
+{
+	run = billrun.getJSON("Bill_Run_Size").toNumber();
+}
+//ToDo:  Error handle over 1000 orders per day using the more_records to get another page, with limit and offset.
+run = run + 1;
+query = "SELECT id FROM Deals WHERE (((Next_Invoice_Date = '" + dateString + "')" + " AND Billing_Run_Status = 'Locked') AND Stage = 'Current Customer') LIMIT 1000";
+// Define the URL to invoke the COQL API
+url = "https://www.zohoapis.eu/crm/v4/coql?coqlQuery=" + query;
+// Define the parameter map to pass to the the COQL API
+param = Map();
+param.put("select_query",query);
+// Invoke the COQL API and get the response
+response = invokeurl
+[
+	url :url
+	type :POST
+	parameters:param.toString()
+	detailed:true
+	connection:"zohocoql"
+];
+//info response;
+orderList = response.get("responseText").getJSON("data");
+//	orderList = zoho.crm.searchRecords("Deals",searchDateString,page,200);
+orderListSize = orderList.size();
+//info orderListSize;
+//get the list of orders and if empty clean-up
+for each  order in orderList
+{
+	info order.get("id");
+	automation.CreateSubscriptionInvoiceAdvanced(order.get("id"),bill_run_id.toLong());
+}
+finishUpdate = zoho.crm.updateRecord("Billing_Runs",bill_run_id,{"Status":"Invoices Processed"});
+schedule.ScheduleBillRunCountInvoice(bill_run_id);
+if (response.get("responseText").get("info").get("more_records") == true){
+	automation.CreateErrorLog("ScheduleStartDailyInvoiceRun","queryLimit","Orders Over Daily 1000 Limit","No Map",bill_run_id,"Billing_Runs");
+	return;
+}
+return;
