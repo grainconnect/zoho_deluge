@@ -1,0 +1,53 @@
+bill_run_id = "498346000015618175";
+//get the bill run
+billrun = zoho.crm.getRecordById("Billing_Runs",bill_run_id);
+//info billrun;
+info billrun.getJSON("Status");
+if(billrun.getJSON("Status") != "Started")
+{
+	automation.CreateBillLog(bill_run_id,"Billing run has been attempted to be re-run...");
+}
+if(billrun.getJSON("Status") == "Scheduled")
+{
+	//start the bill run and set the date and status
+	runCount = standalone.BillRunCountOrders(bill_run_id);
+	startUpdate = zoho.crm.updateRecord("Billing_Runs",bill_run_id,{"Bill_Run_Start_Date":today.toString('YYYY-MM-DD'),"Status":"Started"});
+	automation.CreateBillLog(bill_run_id,"Billing run started...");
+}
+//do some logic to set the search parameter for the order search, and get the next invoices to be processed.
+dateString = billrun.get("Bill_Run_Invoice_Date").toString('yyyy-MM-dd');
+info dateString;
+searchDateString = "((Next_Invoice_Date:equals:" + dateString + ")" + " and (Billing_Status:equals:Active))";
+orderListSize = 0;
+if(billrun.getJSON("Bill_Run_Size") == null)
+{
+	run = 0;
+}
+else
+{
+	run = billrun.getJSON("Bill_Run_Size").toNumber();
+	info run;
+}
+//OMG! Need to review the v4 APIs and move this all to an external nodeJS
+for each  page in {1,2,3,4,5,6,7,8,9,10}
+{
+	info page;
+	run = run + 1;
+	orderList = zoho.crm.searchRecords("Deals",searchDateString,page,200);
+	//info orderList;
+	info "Order List Size";
+	info orderList.size();
+	orderListSize = orderListSize + orderList.size();
+	//get the list of orders and if empty clean-up
+	if(orderList.isEmpty())
+	{
+		finishUpdate = zoho.crm.updateRecord("Billing_Runs",bill_run_id,{"Status":"Invoices Processed","Bill_Run_Size":orderListSize});
+		automation.CreateBillLog(bill_run_id,"Finished Run: Size:" + orderListSize.toString() + " Batches: " + run.toString());
+		return;
+	}
+	for each  order in orderList
+	{
+		info order.get("id");
+		updateOrder = zoho.crm.updateRecord("Deals",order.get("id"),{"Bill_Run":bill_run_id,"Billing_Run_Status":"Locked"});
+	}
+}

@@ -1,0 +1,189 @@
+//order_id = "498346000016071117";
+//bill_run_id = "498346000015570560";
+//bill_run_id = zoho.crm.getOrgVariable("Next_Bill_Run_ID");
+billrun = zoho.crm.getRecordById("Billing_Runs",bill_run_id);
+//get the order and set the invoice details
+order = zoho.crm.getRecordById("Deals",order_id);
+//exit if the invoice has already been processed.
+if(order.get("Billing_Run_Status") == "Awaiting Next Run" && order.get("Next_Invoice_Date").toDate() != billrun.get("Bill_Run_Invoice_Date").toDate())
+{
+	info "Order Already Processed: " + order.get("id");
+	return;
+}
+if(order.get("Billing_Run_Status") == "Awaiting Next Run" && order.get("Next_Invoice_Date").toDate() == billrun.get("Bill_Run_Invoice_Date").toDate())
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - Bill Run Not Locked","No Map",order_id,"Invoices");
+	return;
+}
+if(order.get("Stage") != "Current Customer")
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - Not current customer","No Map",order_id,"Invoices");
+	return;
+}
+if(order.get("Contract_Status") == "Pending" || order.get("Contract_Status") == "Ended")
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - Doesn't have an active or rolling contract","No Map",order_id,"Invoices");
+	return;
+}
+if(isnull(order.get("Total_Cycles")))
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - No Total Cycles","No Map",order_id,"Invoices");
+	return;
+}
+if(isnull(order.get("Contract_Start_Date")))
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - No Contract Start Date","No Map",order_id,"Invoices");
+	return;
+}
+if(isnull(order.get("Current_Cycle")))
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - No Cycle","No Map",order_id,"Invoices");
+	return;
+}
+if(order.get("Contract_Status") == "Rolling" && order.get("Contract_Start_Date").addMonth(toNumber(order.get("Total_Cycles"))).toDate() != order.get("Next_Invoice_Date").toDate())
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - Contract date mismatch:" + order.get("Contract_Start_Date").addMonth(toNumber(order.get("Total_Cycles"))).toString("yyyy-MM-DD") + ".","No Map",order_id,"Invoices");
+	return;
+}
+//to do check the contract payment plan is monthly.
+if(order.get("Payment_Plan") != "Monthly")
+{
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - Not A Monthly Payment Plan","No Map",order_id,"Invoices");
+	return;
+}
+//look-up the class for the invoice
+premises_id = order.get("Premises").get("id");
+premises = zoho.crm.getRecordById("Premises",premises_id);
+project_id = premises.get("Project").get("id");
+project = zoho.crm.getRecordById("Build_Projects",project_id);
+class_id = project.get("Class").get("id");
+//get the basics of the invoice.
+contract_start_date = order.get("Contract_Start_Date").toDate();
+invoice_date = order.get("Next_Invoice_Date").toDate();
+//gets the cycle date 
+current_cycle = toNumber(order.get("Current_Cycle"));
+total_cycles = toNumber(order.get("Total_Cycles"));
+//checks the billing profile and increments the Current Cycle if it is Advanced Billing to add the additional month
+if(order.get("Billing_Process") == "Automated - Advanced")
+{
+	current_cycle = current_cycle + 1;
+}
+//sets the invoice dates based on the cycles
+current_discount_period = toNumber(order.get("Current_Cycle")) + 1;
+next_invoice_date = addMonth(contract_start_date,current_cycle);
+next_invoice_ammount = order.get("Total").toDecimal();
+invoice_subject = "Monthly Subscription for period " + invoice_date + " to " + next_invoice_date.subDay(1);
+//get the selected products subform
+selected_products = order.get("Selected_Products");
+//ToDo - Discuss with Iwona on whether the due date should be different for billing in arrears.
+due_date = order.get("Next_Invoice_Date");
+//discount period logic
+updatedRequired = false;
+updated_products = list();
+products = list();
+for each  p in selected_products
+{
+	line_price = p.get("Price").toDecimal() - ifnull(p.get("Discount"),0);
+	if(order.get("Additional_Discount_Period") == "Yes" && current_discount_period <= order.get("Discounted_Period_Months") && p.get("Type") == "Broadband")
+	{
+		line_price = order.get("Discounted_Period_Broadband_Price");
+	}
+	total = line_price * p.get("Quantity").toDecimal();
+	vat = total - (total / 1.2).round(2);
+	products.add({"Product_Name":{"id":p.get("Product").get("id")},"Quantity":p.get("Quantity"),"VAT":vat,"List_Price":line_price});
+	//ToDo: Add logic to check and remove any credits
+	if(p.get("Type") == "Adjustment")
+	{
+		updatedRequired = true;
+	}
+	else
+	{
+		updated_products.add({"id":p.get("id")});
+	}
+}
+if(updatedRequired = true)
+{
+	updateProductsCRM = zoho.crm.updateRecord("Deals",order_id,{"Selected_Products":updated_products});
+}
+//info selected_products;
+body = {"data":{{"Contact_Name":order.get("Contact_Name").get("id"),"Invoice_Date":invoice_date.toString("yyyy-MM-dd"),"Due_Date":due_date.toString("yyyy-MM-dd"),"Invoiced_Items":products,"Subject":invoice_subject,"Payment_Status":"Due","Deal_Name__s":order_id,"Type":"Subscription","Status":"Delivered","Payment_Requested":"Complete","Period_Start_Date":invoice_date.toString("yyyy-MM-dd"),"Period_End_Date":next_invoice_date.toString("yyyy-MM-dd"),"Bill_Run":bill_run_id,"Class":class_id}}};
+//info body;
+invoice = invokeurl
+[
+	url :"https://www.zohoapis.eu/crm/v4/Invoices"
+	type :POST
+	parameters:body.toString()
+	detailed:true
+	connection:"zohocrmmodules"
+	content-type:"application/json"
+];
+//Logic to update the order to mark as locked and set the current and next invoice date, set the current invoice value to last last invoice value to the total
+if(order.get("Next_Invoice_Amount") == null)
+{
+	current_invoice_ammount = 0;
+}
+else
+{
+	current_invoice_ammount = order.get("Next_Invoice_Amount").toDecimal();
+}
+//check if over rate limit
+if(invoice.get("responseText").get("data").get(0).get("code") == "error" && invoice.get("responseText").get("data").get(0).get("code") == "TOO_MANY_REQUESTS")
+{
+	info "API Request Over Limit";
+	responseHeader = invoice.get("responseHeader");
+	resetTime = responseHeader.get("x-ratelimit-reset").replaceAll("[^0-9]"," ",false).trim().toList(" ").get(0).toLong().toTime();
+	currentTime = zoho.currenttime.addHour(1).toTime();
+	waitTime = resetTime.tolong() - currentTime.toLong();
+	waitTime = (waitTime / 1000).toNumber() + 1;
+	//wait for the error timer to clear NB there is no sleep in Zoho.
+	standalone.wait(waitTime);
+	//retry the invoice creation
+	invoice = invokeurl
+	[
+		url :"https://www.zohoapis.eu/crm/v4/Invoices"
+		type :POST
+		parameters:body.toString()
+		detailed:true
+		connection:"zohocrmmodules"
+		content-type:"application/json"
+	];
+}
+else if(invoice.get("responseText").get("data").get(0).get("code") != "SUCCESS")
+{
+	info "Error - Raising Request";
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Invoice Error - Failed To Raise Invoice",invoice,order_id.toLong(),"Invoices");
+	return;
+}
+else if(invoice.get("responseText").get("data").get(0).get("code") == "SUCCESS")
+{
+	//get the invoice that was created
+	invoiceRecord = invokeurl
+	[
+		url :"https://www.zohoapis.eu/crm/v4/Invoices/" + invoice.get("responseText").get("data").get(0).get("details").get("id")
+		type :GET
+		parameters:body.toString()
+		detailed:true
+		connection:"zohocrmmodules"
+	];
+	invoiceRecordAmount = invoiceRecord.get("responseText").get("data").get(0).get("Total_inc_VAT");
+	//Updates the billing schedule for the period with the correct ammount for the invoice.
+	billing_schedule = order.get("Billing_Schedule");
+	for each  b in billing_schedule
+	{
+		if(b.get("Number") == current_cycle)
+		{
+			b.put("Actual_Bill",invoiceRecordAmount);
+		}
+	}
+	info "Updating Deal";
+	//increment the cycles
+	current_cycle = toNumber(order.get("Current_Cycle")) + 1;
+	total_cycles = toNumber(order.get("Total_Cycles")) + 1;
+	update_deal = zoho.crm.updateRecord("Deals",order_id,{"Billing_Run_Status":"Awaiting Next Run","Current_Invoice_Amount":current_invoice_ammount,"Next_Invoice_Amount":next_invoice_ammount,"Next_Invoice_Date":next_invoice_date,"Current_Invoice_Date":invoice_date,"Bill_Run":bill_run_id,"Current_Cycle":current_cycle,"Total_Cycles":total_cycles,"Billing_Schedule":billing_schedule});
+}
+if(update_deal.get("status") == "error")
+{
+	info "Error - Updating Deal";
+	automation.CreateErrorLog("CreateSubscriptionInvoiceAdvanced","createRecord","Error Updating Deal - Invoice Created but Deal Failed to Update",invoice,order_id.toLong(),"Invoices");
+	return;
+}
