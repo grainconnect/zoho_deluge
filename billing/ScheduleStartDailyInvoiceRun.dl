@@ -1,4 +1,4 @@
-bill_run_id = "498346000015618175";
+//bill_run_id = "498346000015618175";
 //get the bill run
 billrun = zoho.crm.getRecordById("Billing_Runs",bill_run_id);
 //start the bill run and set the date and status
