@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<Crm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Country="US" Name="Zoho" Version="26" SupportsEmojis="false">
+<Crm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Country="US" Name="Zoho Grain" Version="26" SupportsEmojis="false">
   <Number Prefix="Off" MaxLength="[MaxLength]" />
   <Connection MaxConcurrentRequests="16" />
   <Parameters>
@@ -111,7 +111,7 @@
       </Outputs>
     </Scenario>
     <Scenario Type="REST" EntityId="Leads" EntityOrder="[LookupOrder]">
-      <Request SkipIf="[IIf([FoundRecordCount]&gt;0,True,False)]" Url="[ApiDomain]/crm/v2.1/Leads/search?criteria=((Phone:equals:[Number]) or (Mobile:equals:[Number]) or (Fax:equals:[Number]))&amp;fields=id,First_Name,Last_Name,Phone,Mobile,Fax,Email,Company" MessagePasses="0" RequestEncoding="UrlEncoded" RequestType="Get" ResponseType="Json" />
+      <Request SkipIf="[IIf([FoundRecordCount]&gt;0,True,False)]" Url="[ApiDomain]/crm/v2.1/Leads/search?criteria=((Phone:equals:[Number]) or (Mobile:equals:[Number]))&amp;fields=id,First_Name,Last_Name,Phone,Mobile,Fax,Email,Company" MessagePasses="0" RequestEncoding="UrlEncoded" RequestType="Get" ResponseType="Json" />
       <Rules>
         <Rule Type="Any">data.id</Rule>
       </Rules>
@@ -358,7 +358,7 @@
       </Outputs>
     </Scenario>
     <Scenario Id="LookupFromCFD_Contacts_LookupNumber" Type="REST">
-      <Request Url="[ApiDomain]/crm/v2.1/Contacts/search?criteria=((Phone:equals:[Number]) or (Mobile:equals:[Number]) or (Home_Phone:equals:[Number]) or (Other_Phone:equals:[Number]) or (Fax:equals:[Number]))" MessagePasses="0" RequestEncoding="UrlEncoded" RequestType="Get" ResponseType="Json" />
+      <Request Url="[ApiDomain]/crm/v2.1/Contacts/search?criteria=((Phone:equals:[Number]) or (Mobile:equals:[Number]) or (Home_Phone:equals:[Number]) or (Other_Phone:equals:[Number]))" MessagePasses="0" RequestEncoding="UrlEncoded" RequestType="Get" ResponseType="Json" />
       <Rules>
         <Rule Type="Any">data.id</Rule>
       </Rules>
